@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "reading-go-puzzle"
+version = "0.1.0"
+description = "Test your Tsumego reading with simple click the answer rather than click the right move"
+authors = ["Corrin Lakeland <corrin.lakeland@cmeconnect.com>"]
+license = "GPL"
+readme = "README.md"
+package-mode = false
+
+
+[tool.poetry.dependencies]
+python = "^3.10"
+Flask = "3.0.3"
+python-dotenv = "^1.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

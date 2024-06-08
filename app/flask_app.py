@@ -1,4 +1,5 @@
 from flask import Flask
+from flask import Blueprint, render_template
 
 def create_app():
     app = Flask(__name__)
@@ -13,4 +14,10 @@ def create_app():
     return app
 
 # Create the Flask app instance
-application_func = create_app
+app = create_app()
+
+if __name__ == '__main__':
+    app.run(debug=True)
+else:
+    # This block will be executed when running on PythonAnywhere
+    application_func = app
