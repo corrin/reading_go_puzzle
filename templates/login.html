@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Reading Go Puzzle - Login</title>
+    <!-- Add any additional CSS or JavaScript files you need -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Welcome to Reading Tsumego Puzzles</h1>
+        <p>Please log in with your Google account to continue.</p>
+        <div id="g_id_onload"
+             data-client_id="{{ config['GOOGLE_CLIENT_ID'] }}"
+             data-login_uri="{{ url_for('main.google_login', _external=True) }}"
+             data-auto_prompt="false">
+        </div>
+        <div class="g_id_signin"
+             data-type="standard"
+             data-size="large"
+             data-theme="outline"
+             data-text="sign_in_with"
+             data-shape="rectangular"
+             data-logo_alignment="left">
+        </div>
+    </div>
+</body>
+</html>
