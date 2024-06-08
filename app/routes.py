@@ -36,37 +36,24 @@ def main_bp(app):
 
     @bp.route('/google_login', methods=['POST'])
     def google_login():
-        # Get the user's credentials from the Google Sign-In response
         credentials = Credentials.from_authorized_user_info(info=request.get_json())
+        user_data = credentials.get_user_info()
+        email = user_data.get('email')
+
+        # Check if the user already exists in the database
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            # Create a new user
+            user = User(email=email)
+            user.save()
+
+        # Log in the user
+        login_user(user)
 
         # Store the credentials in the session for later use
         session['credentials'] = credentials_to_dict(credentials)
 
-        # Redirect the user to the desired page after successful sign-in
         return redirect(url_for('main.dashboard'))
-
-        auth_url, _ = flow.authorization_url(prompt='consent')
-        logger.debug(f"Redirecting to Google OAuth URL: {auth_url}")
-        return redirect(auth_url)
-
-    @bp.route('/callback')
-    def callback():
-        flow = Flow.from_client_config(
-            client_config={
-                'web': {
-                    'client_id': app.config['GOOGLE_CLIENT_ID'],
-                    'client_secret': app.config['GOOGLE_CLIENT_SECRET'],
-                    'redirect_uris': ['http://localhost:5000/callback'],
-                    'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
-                    'token_uri': 'https://oauth2.googleapis.com/token'
-                }
-            },
-            scopes=['openid', 'email', 'profile']
-        )
-        flow.fetch_token(authorization_response=request.url)
-        credentials = flow.credentials
-        # Use the credentials to get user information and complete the sign-in process
-        # ...
 
     @bp.route('/privacy')
     def privacy():
