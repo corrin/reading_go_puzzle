@@ -16,6 +16,8 @@ flask-login = "^0.6.3"
 google-auth = "^2.30.0"
 google-auth-oauthlib = "^1.2.0"
 oauthlib = "^3.2.2"
+sqlalchemy = "^2.0.31"
+flask-sqlalchemy = "^3.1.1"
 
 
 [build-system]

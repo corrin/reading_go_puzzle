@@ -7,8 +7,10 @@ from google.auth.transport import requests
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 
-
+from app import db
+from app.db import AccessLog
 from app.models import User
+from datetime import datetime
 from app.logger import logger
 
 def credentials_to_dict(credentials):
@@ -37,15 +39,27 @@ def main_bp(app):
     @bp.route('/google_login', methods=['POST'])
     def google_login():
         credentials = Credentials.from_authorized_user_info(info=request.get_json())
-        user_data = credentials.get_user_info()
-        email = user_data.get('email')
+        # Extract user information from the POST request
+        user_info = request.json.get('user_info')
+        email = user_info.get('email')
 
         # Check if the user already exists in the database
         user = User.query.filter_by(email=email).first()
+
         if not user:
             # Create a new user
             user = User(email=email)
-            user.save()
+            db.session.add(user)
+            db.session.commit()
+        else:
+            # Update last login time
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+
+        # Log the login attempt
+        login_log = AccessLog(user_id=user.id,page='/google_login')
+        db.session.add(login_log)
+        db.session.commit()
 
         # Log in the user
         login_user(user)
