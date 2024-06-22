@@ -2,14 +2,29 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Reading Tsumego Puzzle - Dashboard</title>
-    <!-- Add any additional CSS or JavaScript files you need -->
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Welcome, {{ current_user.email }}</h1>
-        <p>This is your dashboard.</p>
-        <!-- Add any additional content or functionality for the dashboard -->
+    <div class="header">
+        <h1>Tsumego Portal</h1>
     </div>
+    <div class="nav">
+        <a href="#">Home</a>
+        <a href="#">Collections</a>
+        <a href="#">Play</a>
+        <a href="#">Highscore</a>
+        <a href="#">Discuss</a>
+        <div id="user-profile">
+            <img src="{{ current_user.profile_pic }}" alt="Profile Picture" width="30" height="30">
+            <span>{{ current_user.email }}</span>
+            <a href="{{ url_for('main.logout') }}">Logout</a>
+        </div>
+    </div>
+    <div class="content">
+        <h2>Welcome, {{ current_user.email }}</h2>
+        <p>This is your dashboard.</p>
+    </div>
+    {% include 'footer.html' %}
 </body>
 </html>

@@ -2,67 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Reading Go Puzzle - Login</title>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            color: #333;
-            margin: 0;
-            padding: 0;
-        }
-        .header {
-            background-color: #6a1b9a; /* Dark purple background */
-            color: white;
-            padding: 10px 20px;
-            text-align: center;
-        }
-        .nav {
-            display: flex;
-            justify-content: space-around; /* Evenly space the navigation links */
-            align-items: center; /* Align items vertically */
-            background-color: #e1bee7; /* Light purple background */
-            padding: 10px 0;
-        }
-        .nav a, .nav div {
-            text-decoration: none;
-            color: #333;
-            font-weight: bold;
-            margin: 0 10px; /* Spacing between nav items */
-        }
-        #google-sign-in {
-            display: inline-block; /* Makes the Google button align nicely with other nav items */
-        }
-        footer {
-            text-align: center;
-            padding: 10px 0;
-            background-color: #ce93d8; /* Lighter purple */
-            color: white;
-        }
-        #user-info {
-            padding: 20px;
-            text-align: center;
-            display: none; /* Hidden by default */
-        }
-    </style>
+    <title>Tsumego Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
     <div class="header">
-        <h1>Go Puzzles Portal</h1>
+        <h1>Tsumego Portal</h1>
     </div>
-    <div class="nav">
-        <a href="#">Home</a>
-        <a href="#">Collections</a>
-        <a href="#">Play</a>
-        <a href="#">Highscore</a>
-        <a href="#">Discuss</a>
+    <div class="content">
+        <h2>You must be logged in using Google to use this app.</h2>
         <div id="google-sign-in"></div>
+        {% include 'about_text.html' %}
     </div>
-    <div id="user-info"></div> <!-- Area to display user information after login -->
-    <footer>
-        © 2024 Go Puzzles Portal
-    </footer>
+    {% include 'footer.html' %}
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
         function handleCredentialResponse(response) {
             const data = JSON.parse(atob(response.credential.split('.')[1])); // Decode JWT payload
@@ -71,20 +25,7 @@
             const email = data.email;
             const profilePicUrl = data.picture;
 
-            // Display the user info on the page
-            const userInfo = document.getElementById('user-info');
-            userInfo.innerHTML = `Signed in as: <b>${name}</b> (${email})`;
-            userInfo.style.display = 'block'; // Make the user info visible
-            document.getElementById('google-sign-in').style.display = 'none'; // Hide the sign-in button
-
             // Send the user's profile information to your Flask backend
-            const formData = new FormData();
-            formData.append('name', name);
-            formData.append('email', email);
-            formData.append('profilePicUrl', profilePicUrl);
-
-            console.log("Google login URL:", '{{ url_for("main.google_login", _external=True) }}');
-
             fetch('{{ url_for("main.google_login", _external=True, _scheme="https") }}', {
                 method: 'POST',
                 headers: {

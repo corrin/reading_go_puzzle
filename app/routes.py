@@ -1,5 +1,5 @@
 from flask import Blueprint, redirect, url_for, request, render_template, jsonify
-from flask_login import login_user, current_user, login_required
+from flask_login import login_user, current_user, login_required, logout_user
 from flask import redirect, url_for, session, request
 
 from google.oauth2 import id_token
@@ -101,5 +101,15 @@ def main_bp(app):
     @login_required
     def dashboard():
         return render_template('dashboard.html')
+
+    @bp.route('/logout')
+    @login_required
+    def logout():
+        logout_user()
+        return redirect(url_for('main.index'))
+
+    @bp.route('/about')
+    def about():
+        return render_template('about.html')
 
     return bp

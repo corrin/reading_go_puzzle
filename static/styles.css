@@ -1,0 +1,48 @@
+/* styles.css */
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f9;
+    color: #333;
+    margin: 0;
+    padding: 0;
+}
+
+.header {
+    background-color: #6a1b9a; /* Dark purple background */
+    color: white;
+    padding: 10px 20px;
+    text-align: center;
+}
+
+.nav {
+    display: flex;
+    justify-content: space-around; /* Evenly space the navigation links */
+    align-items: center; /* Align items vertically */
+    background-color: #e1bee7; /* Light purple background */
+    padding: 10px 0;
+}
+
+.nav a, .nav div {
+    text-decoration: none;
+    color: #333;
+    font-weight: bold;
+    margin: 0 10px; /* Spacing between nav items */
+}
+
+#google-sign-in {
+    display: inline-block; /* Makes the Google button align nicely with other nav items */
+}
+
+footer {
+    text-align: center;
+    padding: 10px 0;
+    background-color: #ce93d8; /* Lighter purple */
+    color: white;
+}
+
+#user-info {
+    padding: 20px;
+    text-align: center;
+    display: none; /* Hidden by default */
+}

@@ -3,23 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <title>Terms of Service</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <h1>Terms of Service</h1>
-    <p>By using [Your App Name], you agree to the following terms and conditions:</p>
+    <div class="header">
+        <h1>Terms of Service</h1>
+    </div>
+    <div class="content">
+        <p>By using Tsumego Solver, you agree to the following terms and conditions:</p>
 
-    <ol>
-        <li><strong>Personal Use</strong>: This application is intended for individual personal use only. You may not use it for commercial purposes or distribute it without prior written consent.</li>
-        <li><strong>Cheating and Fair Play</strong>: You agree not to engage in any form of cheating or attempt to gain an unfair advantage. This includes, but is not limited to, using unauthorized tools, scripts, or exploits.</li>
-        <li><strong>Intellectual Property</strong>: The content and materials provided within this application are protected by intellectual property laws. You may not copy, reproduce, distribute, or create derivative works from these materials without prior written permission, except as permitted by the GNU General Public License (GPL).</li>
-        <li><strong>GPL Compliance</strong>: This application is licensed under the GPL. You may use, modify, and distribute the application in accordance with the terms and conditions of the GPL.</li>
-        <li><strong>Limitation of Liability</strong>: We shall not be liable for any direct, indirect, incidental, consequential, or punitive damages arising from the use or inability to use this application.</li>
-        <li><strong>Termination</strong>: We reserve the right to terminate or suspend your access to the application at any time, without notice, for any reason, including but not limited to a violation of these terms of service.</li>
-        <li><strong>Changes to Terms</strong>: We may update these terms of service from time to time. Any changes will be posted on this page, and your continued use of the application constitutes acceptance of the updated terms.</li>
-    </ol>
+        <ol>
+            <li><strong>Personal Use</strong>: This application is intended for individual personal use only. You may not use it for commercial purposes or distribute it without prior written consent.</li>
+            <li><strong>Cheating and Fair Play</strong>: You agree not to engage in any form of cheating or attempt to gain an unfair advantage. This includes, but is not limited to, using unauthorized tools, scripts, or exploits.</li>
+            <li><strong>Intellectual Property</strong>: The content and materials provided within this application are protected by intellectual property laws. You may not copy, reproduce, distribute, or create derivative works from these materials without prior written permission, except as permitted by the GNU General Public License (GPL).</li>
+            <li><strong>GPL Compliance</strong>: This application is licensed under the GPL. You may use, modify, and distribute the application in accordance with the terms and conditions of the GPL.</li>
+            <li><strong>Limitation of Liability</strong>: We shall not be liable for any direct, indirect, incidental, consequential, or punitive damages arising from the use or inability to use this application.</li>
+            <li><strong>Termination</strong>: We reserve the right to terminate or suspend your access to the application at any time, without notice, for any reason, including but not limited to a violation of these terms of service.</li>
+            <li><strong>Changes to Terms</strong>: We may update these terms of service from time to time. Any changes will be posted on this page, and your continued use of the application constitutes acceptance of the updated terms.</li>
+        </ol>
 
-    <p>By using [Your App Name], you acknowledge that you have read, understood, and agreed to these terms of service. If you do not agree with these terms, you must refrain from using the application.</p>
+        <p>By using Tsumego Solver, you acknowledge that you have read, understood, and agreed to these terms of service. If you do not agree with these terms, you must refrain from using the application.</p>
 
-    <p>If you have any questions or concerns about these terms of service, please contact us at [Your Contact Email].</p>
+        <p>If you have any questions or concerns about these terms of service, please contact us at lakeland@gmail.com.</p>
+    </div>
+    {% include 'footer.html' %}
 </body>
 </html>
