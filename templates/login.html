@@ -83,9 +83,20 @@
             formData.append('email', email);
             formData.append('profilePicUrl', profilePicUrl);
 
-            fetch('{{ url_for("main.google_login", _external=True) }}', {
+            console.log("Google login URL:", '{{ url_for("main.google_login", _external=True) }}');
+
+            fetch('{{ url_for("main.google_login", _external=True, _scheme="https") }}', {
                 method: 'POST',
-                body: formData
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_info: {
+                        name: name,
+                        email: email,
+                        profilePicUrl: profilePicUrl
+                    }
+                })
             })
             .then(response => {
                 if (response.ok) {

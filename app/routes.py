@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, url_for, request, render_template
+from flask import Blueprint, redirect, url_for, request, render_template, jsonify
 from flask_login import login_user, current_user, login_required
 from flask import redirect, url_for, session, request
 
@@ -7,9 +7,8 @@ from google.auth.transport import requests
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 
-from app import db
-from app.db import AccessLog
-from app.models import User
+from app.db import db, AccessLog
+from app.user import User
 from datetime import datetime
 from app.logger import logger
 
@@ -38,36 +37,57 @@ def main_bp(app):
 
     @bp.route('/google_login', methods=['POST'])
     def google_login():
-        credentials = Credentials.from_authorized_user_info(info=request.get_json())
-        # Extract user information from the POST request
-        user_info = request.json.get('user_info')
-        email = user_info.get('email')
+        logger.debug("Hello")
+        logger.info("Google login function called")
+        logger.info(f"Request content type: {request.content_type}")
+        logger.info(f"Request data: {request.data}")
 
-        # Check if the user already exists in the database
-        user = User.query.filter_by(email=email).first()
+        try:
+            json_data = request.get_json()
+            logger.info(f"JSON data: {json_data}")
+            user_info = json_data.get('user_info')
+            if not user_info:
+                raise ValueError("User info is missing in the request")
 
-        if not user:
-            # Create a new user
-            user = User(email=email)
-            db.session.add(user)
+            email = user_info.get('email')
+            if not email:
+                raise ValueError("Email is missing in the user info")
+
+            logger.info(f"Searching for user with email: {email}")
+
+            # Check if the user already exists in the database
+            user = User.query.filter_by(email=email).first()
+            logger.info(f"User query result: {user}")
+
+            if not user:
+                # Create a new user
+                user = User(email=email)
+                db.session.add(user)
+                db.session.commit()
+                logger.info("New user created and committed to database")
+            else:
+                # Update last login time
+                logger.info("Updating existing user's last login time")
+                user.last_login = datetime.utcnow()
+                db.session.commit()
+                logger.info("User last login time updated and committed to database")
+
+            # Log the login
+            logger.info("Creating AccessLog entry")
+            login_log = AccessLog(user_id=user.id,page='/google_login')
+            db.session.add(login_log)
             db.session.commit()
-        else:
-            # Update last login time
-            user.last_login = datetime.utcnow()
-            db.session.commit()
+            logger.info("AccessLog entry created and committed to database")
 
-        # Log the login attempt
-        login_log = AccessLog(user_id=user.id,page='/google_login')
-        db.session.add(login_log)
-        db.session.commit()
+            # Log in the user
+            logger.info("Logging in user")
+            login_user(user, remember=True)
+            logger.info("User logged in successfully")
+            return redirect(url_for('main.dashboard'))
 
-        # Log in the user
-        login_user(user)
-
-        # Store the credentials in the session for later use
-        session['credentials'] = credentials_to_dict(credentials)
-
-        return redirect(url_for('main.dashboard'))
+        except Exception as e:
+            logger.error(f"Error in google_login: {str(e)}")
+            return jsonify({"error": str(e)}), 400
 
     @bp.route('/privacy')
     def privacy():

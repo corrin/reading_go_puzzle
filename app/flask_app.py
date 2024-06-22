@@ -1,15 +1,17 @@
 import os
 
+from werkzeug.middleware.proxy_fix import ProxyFix  # Just in dev to handle ngrok
 from flask import Flask
 from flask_login import LoginManager
-from app.models import User
 from app.logger import logger
-from app.db import db, User
+from app.db import db
+from app.user import User
 
 login_manager = LoginManager()
 
 def create_app():
     app = Flask(__name__, instance_relative_config=False)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # Just in dev to handle ngrok
 
     logger.info(f"App instance path (before loading config): {app.instance_path}")
 
@@ -23,7 +25,6 @@ def create_app():
     app.template_folder = app.config['TEMPLATES_FOLDER']
 
     db.init_app(app)
-    logger.debug("Database initialised")
     login_manager.init_app(app)
 
 
@@ -32,24 +33,14 @@ def create_app():
     app.register_blueprint(main_bp(app))
 
     with app.app_context():
-        logger.debug("Creating all database tables...")
         db.create_all()
-        logger.info("Database tables created or verified")
-
-    db_path = os.path.abspath(app.config['SQLALCHEMY_DATABASE_URI'].replace("sqlite:///", ""))
-    logger.debug(f"Expected database path: {db_path}")
-    if os.path.exists(db_path):
-        logger.info(f"Database file '{db_path}' exists.")
-    else:
-        logger.error(f"Database file '{db_path}' does not exist.")
-
 
     return app
 
 # User loader function for Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
-    return User.get(user_id)
+    return User.query.get(user_id)  # Updated to query the database
 
 # Create the Flask app instance
 app = create_app()
