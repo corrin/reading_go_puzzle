@@ -1,0 +1,19 @@
+{% if current_user.is_authenticated %}
+<div class="nav">
+    <a href="{{ url_for('main.dashboard') }}">Home</a>
+    <!-- <a href="#">Collections</a> -->
+    <a href="{{ url_for('main.play') }}">Play</a>
+    <!-- <a href="#">Highscore</a>
+    <a href="#">Discuss</a> -->
+    <div id="user-profile">
+    <img src="{{ user_profile.get('picture') }}" alt="Profile Picture" width="30" height="30">
+    <span>{{ user_profile.get('name') or current_user.email }}</span>
+    <a href="{{ url_for('main.logout') }}">Logout</a>
+    </div>
+</div>
+{% endif %}
+
+
+    <!-- Collections is an idea from Tsumego hero.  Currently disabled-->
+    <!-- Highscore is an idea from Tsumego hero.  Currently disabled-->
+    <!-- Discuss is an idea from Tsumego hero.  Currently disabled-->

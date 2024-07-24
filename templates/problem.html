@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Problem Challenge</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>Problem Challenge</h1>
+    </div>
+    {% include 'nav.html' %}
+    <div class="content">
+        <div id="problem-container">
+            <img id="board-image" src="{{ url_for('static', filename=problem.board_image) }}" alt="Go Board">
+            <p id="color-to-move">{{ problem.color_to_move }} to move</p>
+        </div>
+        <div id="response-buttons">
+            <div>
+                <h3>What if white plays:</h3>
+                <button onclick="submitResponse('white', 'alive')">Alive</button>
+                <button onclick="submitResponse('white', 'dead')">Dead</button>
+                <button onclick="submitResponse('white', 'seki')">Seki</button>
+                <button onclick="submitResponse('white', 'ko')">Ko</button>
+            </div>
+            <div>
+                <h3>What if white tenuki:</h3>
+                <button onclick="submitResponse('tenuki', 'alive')">Alive</button>
+                <button onclick="submitResponse('tenuki', 'dead')">Dead</button>
+                <button onclick="submitResponse('tenuki', 'seki')">Seki</button>
+                <button onclick="submitResponse('tenuki', 'ko')">Ko</button>
+            </div>
+        </div>
+        <div id="navigation-buttons">
+            <a href="{{ url_for('main.problem', challenge_id=challenge_id, problem_index=problem_index - 1) }}">Previous Problem</a>
+            <a href="{{ url_for('main.problem', challenge_id=challenge_id, problem_index=problem_index + 1) }}">Next Problem</a>
+        </div>
+    </div>
+    {% include 'footer.html' %}
+    <script>
+        function submitResponse(type, response) {
+            $.post("{{ url_for('main.submit_response', _external=True) }}", {
+                challenge_id: {{ challenge_id }},
+                problem_index: {{ problem_index }},
+                response: response
+            }, function(data) {
+                if (data.is_correct) {
+                    alert("Correct!");
+                } else {
+                    alert("Incorrect!");
+                }
+            });
+        }
+    </script>
+</body>
+</html>

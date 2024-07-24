@@ -1,12 +1,13 @@
 import os
 
 from werkzeug.middleware.proxy_fix import ProxyFix  # Just in dev to handle ngrok
-from flask import Flask
+from flask import Flask, session
 from flask_login import LoginManager
 from app.logger import logger
 from app.db import db
 from app.user import User
 from config import Config
+from app.routes import bp as main_bp
 
 login_manager = LoginManager()
 
@@ -21,6 +22,7 @@ def create_app():
     # Configure the app
     app.config.from_object('config.Config')
     logger.info(f"App instance path (after loading config): {app.instance_path}")
+    print(f"GOOGLE_CLIENT_ID: {app.config.get('GOOGLE_CLIENT_ID')}")
     #logger.info(f"App config: {app.config}")
 
     app.template_folder = app.config['TEMPLATE_FOLDER']
@@ -31,8 +33,12 @@ def create_app():
 
 
     # Register blueprints
-    from .routes import main_bp
-    app.register_blueprint(main_bp(app))
+    app.register_blueprint(main_bp)
+
+    # Add context processor
+    @app.context_processor
+    def inject_user_profile():
+        return dict(user_profile=session.get('user_profile', {}))
 
     with app.app_context():
         db.create_all()

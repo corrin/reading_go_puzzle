@@ -2,65 +2,63 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Tsumego Portal</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tsumego Solver</title>
 </head>
 <body>
-    <div class="header">
-        <h1>Tsumego Portal</h1>
-    </div>
-    <div class="content">
-        <h2>You must be logged in using Google to use this app.</h2>
-        <div id="google-sign-in"></div>
-        {% include 'about_text.html' %}
-    </div>
+    <h1>Tsumego Solver</h1>
+
+    <h2>You must be logged in using Google to use this app.</h2>
+
+    <div id="google-sign-in"></div>
+    <div id="client-id-display" style="display: none;"></div>
+    <div id="error-message" style="color: red;"></div>
+
+    {% include 'about_text.html' %}
     {% include 'footer.html' %}
 
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
         function handleCredentialResponse(response) {
-            const data = JSON.parse(atob(response.credential.split('.')[1])); // Decode JWT payload
-
-            const name = data.name;
-            const email = data.email;
-            const profilePicUrl = data.picture;
-
-            // Send the user's profile information to your Flask backend
-            fetch('{{ url_for("main.google_login", _external=True, _scheme="https") }}', {
+            fetch('/google_login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
-                    user_info: {
-                        name: name,
-                        email: email,
-                        profilePicUrl: profilePicUrl
-                    }
-                })
-            })
-            .then(response => {
+                body: JSON.stringify({user_info: response})
+            }).then(response => {
                 if (response.ok) {
-                    console.log("Login successful, redirecting...");
-                    window.location.href = '{{ url_for("main.dashboard") }}';
-                } else {
-                    console.error('Error during sign-in:', response.statusText);
+                    window.location.href = '/dashboard';
                 }
-            })
-            .catch(error => {
-                console.error('Error during sign-in:', error);
             });
         }
 
         window.onload = function () {
-            google.accounts.id.initialize({
-                client_id: '{{ google_client_id }}',
-                callback: handleCredentialResponse
-            });
-            google.accounts.id.renderButton(
-                document.getElementById('google-sign-in'),
-                { theme: 'outline', size: 'large' }
-            );
+            var clientId = '{{ google_client_id }}';
+            document.getElementById('client-id-display').textContent = 'Client ID: ' + clientId;
+
+            if (!clientId || clientId.trim() === '') {
+                document.getElementById('error-message').textContent = 'Error: Google client ID is not set correctly.';
+                return;
+            }
+
+            if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
+                document.getElementById('error-message').textContent = 'Error: Google Sign-In API not loaded.';
+                return;
+            }
+
+            try {
+                google.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: handleCredentialResponse
+                });
+                google.accounts.id.renderButton(
+                    document.getElementById('google-sign-in'),
+                    { theme: 'outline', size: 'large' }
+                );
+            } catch (error) {
+                document.getElementById('error-message').textContent = 'Error initializing Google Sign-In: ' + error.message;
+            }
         }
     </script>
 </body>

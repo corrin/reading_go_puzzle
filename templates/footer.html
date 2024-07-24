@@ -1,5 +1,10 @@
 <footer>
-    © 2024 Tsumego Solver |
+    © 2024 Corrin Lakeland |
+{% if current_user.is_authenticated %}
+    <a href="{{ url_for('main.dashboard') }}">Dashboard</a> |
+{% else %}
+    <a href="{{ url_for('main.login') }}">Login</a> |
+{% endif %}
     <a href="{{ url_for('main.privacy') }}">Privacy Policy</a> |
     <a href="{{ url_for('main.tos') }}">Terms of Service</a> |
     <a href="{{ url_for('main.about') }}">About</a>

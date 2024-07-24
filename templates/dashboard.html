@@ -9,18 +9,7 @@
     <div class="header">
         <h1>Tsumego Portal</h1>
     </div>
-    <div class="nav">
-        <a href="#">Home</a>
-        <a href="#">Collections</a>
-        <a href="#">Play</a>
-        <a href="#">Highscore</a>
-        <a href="#">Discuss</a>
-        <div id="user-profile">
-            <img src="{{ current_user.profile_pic }}" alt="Profile Picture" width="30" height="30">
-            <span>{{ current_user.email }}</span>
-            <a href="{{ url_for('main.logout') }}">Logout</a>
-        </div>
-    </div>
+    {% include 'nav.html' %}
     <div class="content">
         <h2>Welcome, {{ current_user.email }}</h2>
         <p>This is your dashboard.</p>
