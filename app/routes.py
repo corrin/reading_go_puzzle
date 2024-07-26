@@ -164,33 +164,31 @@ def problem(challenge_id, problem_index):
 
     return render_template('problem.html', problem=problem, challenge_id=challenge_id, problem_index=problem_index, total_problems=len(challenge.problems))
 
-    @bp.route('/submit_response', methods=['POST'])
-    @login_required
-    def submit_response():
-        data = request.get_json()
-        challenge_id = data.get('challenge_id')
-        problem_index = data.get('problem_index')
-        user_response_play = data.get('response_play')
-        user_response_tenuki = data.get('response_tenuki')
+@bp.route('/submit_response', methods=['POST'])
+@login_required
+def submit_response():
+    data = request.get_json()
+    challenge_id = data.get('challenge_id')
+    problem_index = data.get('problem_index')
+    user_response = data.get('response')
 
-        try:
-            challenge = Challenge.query.filter_by(id=challenge_id).one()
-        except NoResultFound:
-            return jsonify({"error": "Challenge not found"}), 404
+    challenge = Challenge.query.get_or_404(challenge_id)
+    problem = challenge.get_problem(problem_index)
 
-        problem = challenge.get_problem(problem_index)
+    is_correct = user_response == problem.correct_response
 
-        is_correct = (
-                    user_response_play == problem.correct_response_play and user_response_tenuki == problem.correct_response_tenuki)
+    response = Response(
+        challenge_id=challenge_id,
+        problem_id=problem.id,
+        user_response=user_response,
+        is_correct=is_correct
+    )
+    db.session.add(response)
+    db.session.commit()
 
-        response = Response(
-            challenge_id=challenge_id,
-            problem_id=problem.id,
-            user_response_play=user_response_play,
-            user_response_tenuki=user_response_tenuki,
-            is_correct=is_correct
-        )
-        db.session.add(response)
-        db.session.commit()
+    # Update the challenge's current problem index
+    challenge.current_problem_index = problem_index + 1
+    db.session.commit()
 
-        return jsonify({"is_correct": is_correct})
+    return jsonify({"success": True})
+

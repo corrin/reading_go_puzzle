@@ -22,7 +22,10 @@ def create_app():
     # Configure the app
     app.config.from_object('config.Config')
     logger.info(f"App instance path (after loading config): {app.instance_path}")
+
     print(f"GOOGLE_CLIENT_ID: {app.config.get('GOOGLE_CLIENT_ID')}")
+    print(f"Remember to use ngrok:  https://measured-enormously-man.ngrok-free.app -> http://localhost:5000")
+
     #logger.info(f"App config: {app.config}")
 
     app.template_folder = app.config['TEMPLATE_FOLDER']

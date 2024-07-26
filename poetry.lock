@@ -538,6 +538,17 @@ files = [
 pyasn1 = ">=0.1.3"
 
 [[package]]
+name = "sgfmill"
+version = "1.1.1"
+description = "Library for reading and writing files using Smart Game Format (SGF)."
+optional = false
+python-versions = "*"
+files = [
+    {file = "sgfmill-1.1.1-py3-none-any.whl", hash = "sha256:759cd843eba647875931d3a10eb329362087b9832f6b49ee85cf8948b0608b3d"},
+    {file = "sgfmill-1.1.1.tar.gz", hash = "sha256:1f44fa6b613acfae23cf7f69985a4a911fc06f772f6c63c0bbfc89044d88f41d"},
+]
+
+[[package]]
 name = "sqlalchemy"
 version = "2.0.31"
 description = "Database Abstraction Library"
@@ -672,4 +683,4 @@ watchdog = ["watchdog (>=2.3)"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "689601b15231dfb92e427c3fbdf68a9872ef1cf859bd882044feca5d5cb694fa"
+content-hash = "9dd38a166a21024222bffaf31a34d69cc2353ef56ea2df66c0d17b41df97472a"
