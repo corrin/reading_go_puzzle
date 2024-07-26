@@ -2,7 +2,7 @@ import os
 import click
 import logging
 from enum import Enum
-from sgfmill import sgf
+from sgfmill import sgf, sgf_moves
 
 INPUT_DIR = 'sgf/raw'
 OUTPUT_DIR = 'sgf/processed'
@@ -45,7 +45,7 @@ def find_solution_path(node, path=None):
     log_message(f"Checking node: {node.get_move()}", VerbosityLevel.DEBUG)
 
     if node.has_property('C'):
-        comment = ''.join(node.get('C'))  # Join all characters to form the complete comment
+        comment = ''.join(node.get('C'))
         log_message(f"Comment found: {comment}", VerbosityLevel.DEBUG)
         if 'Correct' in comment:
             log_message(f"Correct solution found at move {node.get_move()}", VerbosityLevel.INFO)
@@ -69,20 +69,6 @@ def has_tenuki_paths(node):
 
     log_message("No tenuki paths found", VerbosityLevel.DEBUG)
     return False
-
-
-def get_initial_setup(game):
-    root = game.get_root()
-    black_stones = root.get('AB') if root.has_property('AB') else []
-    white_stones = root.get('AW')
-
-    log_message(f"Initial setup - Black: {black_stones}, White: {white_stones}", VerbosityLevel.DEBUG)
-
-    if not black_stones and not white_stones:
-        log_message("No initial stones found. Invalid problem.", VerbosityLevel.ERROR)
-        raise ValueError("Invalid problem: No initial stones found.")
-
-    return black_stones, white_stones
 
 
 def determine_problem_type(solution_path):
@@ -112,49 +98,77 @@ def create_output_sgf_string(input_game, solution_path, is_tenuki=False):
     root = input_game.get_root()
     log_message(f"Game size: {size}, Root node: {root}", VerbosityLevel.DEBUG)
 
-    # Start with fixed header properties
-    sgf_string = "(;FF[4]GM[1]CA[UTF-8]AP[Tsumego Solver:1.0]ST[2]RU[Japanese]SZ[19]KM[0.00]"
-    log_message(f"Initial SGF string: {sgf_string}", VerbosityLevel.DEBUG)
+    def to_sgf_coord(row, col):
+        return f"{chr(97 + col)}{chr(97 + row)}"
+
+    # Get the board state from SGFMill
+    board, plays = sgf_moves.get_setup_and_moves(input_game)
+
+    ko_point = None
+    if is_tenuki and plays:
+        color, move = plays[0]
+        row, col = move
+        ko_point = board.play(row, col, color)
+        log_message(f"Played tenuki move: {color} at {to_sgf_coord(row, col)}", VerbosityLevel.DEBUG)
+
+    # Get stones from the board
+    black_stones = []
+    white_stones = []
+    for row in range(size):
+        for col in range(size):
+            color = board.get(row, col)
+            if color == 'b':
+                black_stones.append(to_sgf_coord(row, col))
+            elif color == 'w':
+                white_stones.append(to_sgf_coord(row, col))
+
+    log_message(f"Black stones: {black_stones}", VerbosityLevel.DEBUG)
+    log_message(f"White stones: {white_stones}", VerbosityLevel.DEBUG)
+
+    # Check if we have a valid problem (stones on the board)
+    if not black_stones or not white_stones:
+        error_msg = "Invalid problem: There must be both black and white stones on the board."
+        log_message(error_msg, VerbosityLevel.ERROR)
+        raise ValueError(error_msg)
+
+    # Start building the SGF string
+    sgf_string = "(;FF[4]GM[1]CA[UTF-8]AP[Tsumego Solver:1.0]ST[2]RU[Japanese]"
+    sgf_string += f"SZ[{size}]KM[0.00]"
 
     # Determine color to play and problem type
-    first_move = solution_path[1].get_move() if len(solution_path) > 1 else None
-    color_to_play = first_move[0] if first_move else 'B'
-    log_message(f"First move: {first_move}, Color to play: {color_to_play}", VerbosityLevel.DEBUG)
-
+    color_to_play = 'W' if is_tenuki else 'B'
     problem_type = determine_problem_type(solution_path)
-    log_message(f"Problem type: {problem_type}", VerbosityLevel.DEBUG)
+    if is_tenuki:
+        problem_type = 'save' if problem_type == 'kill' else 'kill'
+
+    log_message(f"Color to play: {color_to_play}, Problem type: {problem_type}", VerbosityLevel.DEBUG)
 
     # Add PL for player to move
-    sgf_string += f"PL[{color_to_play.upper()}]"
-    log_message(f"SGF string after adding PL: {sgf_string}", VerbosityLevel.DEBUG)
+    sgf_string += f"PL[{color_to_play}]"
 
     # Add SO if present in the original SGF
     if root.has_property('SO'):
         source = ''.join(root.get('SO'))
         log_message(f"Source property found: {source}", VerbosityLevel.DEBUG)
         sgf_string += f"SO[{source}]"
-    else:
-        log_message("No SO property found", VerbosityLevel.DEBUG)
 
-    # Add comment
-    comment = f"{'White' if color_to_play.lower() == 'w' else 'Black'} to {problem_type}"
+    # Add comment with problem description, correct answer, and ko information
+    comment = f"Can {color_to_play} {problem_type} the marked stone? "
+    comment += "Correct answer: NO" if is_tenuki else "Correct answer: YES"
+    if ko_point:
+        ko_coord = to_sgf_coord(*ko_point)
+        comment += f"\nKo point: {ko_coord}"
     sgf_string += f"C[{comment}]"
     log_message(f"Added comment: {comment}", VerbosityLevel.DEBUG)
 
-    # Add initial position
-    black_stones = root.get('AB')
-    white_stones = root.get('AW')
+    # Add stones to the SGF string
+    sgf_string += "AB" + "".join(f"[{stone}]" for stone in black_stones)
+    sgf_string += "AW" + "".join(f"[{stone}]" for stone in white_stones)
 
-    log_message(f"Initial black stones: {black_stones}", VerbosityLevel.DEBUG)
-    log_message(f"Initial white stones: {white_stones}", VerbosityLevel.DEBUG)
-
-    sgf_string += "AB"
-    for stone in black_stones:
-        sgf_string += f"[{stone}]"
-
-    sgf_string += "AW"
-    for stone in white_stones:
-        sgf_string += f"[{stone}]"
+    # Mark ko point
+    if ko_point:
+        ko_coord = to_sgf_coord(*ko_point)
+        sgf_string += f"MA[{ko_coord}]"
 
     sgf_string += ")"
 
@@ -162,6 +176,7 @@ def create_output_sgf_string(input_game, solution_path, is_tenuki=False):
     log_message("Exiting create_output_sgf_string function", VerbosityLevel.DEBUG)
 
     return sgf_string
+
 
 def process_sgf(file_path):
     try:
@@ -171,19 +186,14 @@ def process_sgf(file_path):
         log_message(f"Searching for solution path", VerbosityLevel.INFO)
         solution_path = find_solution_path(input_game.get_root())
         if not solution_path:
-            log_message("No solution found in the SGF", VerbosityLevel.INFO)
             raise ValueError("No solution found in the SGF")
-        log_message(f"Solution path found: {[node.get_move() for node in solution_path if node.get_move()]}",
-                    VerbosityLevel.INFO)
 
         log_message(f"Checking for tenuki paths", VerbosityLevel.INFO)
         if not has_tenuki_paths(input_game.get_root()):
-            log_message("No tenuki paths found in the SGF", VerbosityLevel.INFO)
             raise ValueError("No tenuki paths found in the SGF")
-        log_message(f"Tenuki paths found", VerbosityLevel.INFO)
 
         # Create main problem
-        output_sgf = create_output_sgf_string(input_game, solution_path)
+        output_sgf = create_output_sgf_string(input_game, solution_path, is_tenuki=False)
         output_file_name = os.path.splitext(os.path.basename(file_path))[0] + '_main.sgf'
         output_file_path = os.path.join(OUTPUT_DIR, output_file_name)
         with open(output_file_path, 'w', encoding='utf-8') as f:
@@ -195,7 +205,8 @@ def process_sgf(file_path):
         for child in input_game.get_root():
             if child not in solution_path:
                 log_message(f"Processing tenuki path: {child.get_move()}", VerbosityLevel.INFO)
-                tenuki_sgf = create_output_sgf_string(input_game, [input_game.get_root(), child], is_tenuki=True)
+                tenuki_solution_path = [input_game.get_root(), child]
+                tenuki_sgf = create_output_sgf_string(input_game, tenuki_solution_path, is_tenuki=True)
                 tenuki_file_name = f"{os.path.splitext(os.path.basename(file_path))[0]}_tenuki_{tenuki_count}.sgf"
                 tenuki_file_path = os.path.join(OUTPUT_DIR, tenuki_file_name)
                 with open(tenuki_file_path, 'w', encoding='utf-8') as f:
@@ -206,12 +217,10 @@ def process_sgf(file_path):
         log_message(f"Successfully processed {file_path}. Generated {tenuki_count + 1} problem(s).",
                     VerbosityLevel.INFO)
         return True, tenuki_count + 1  # +1 for the main problem
-    except ValueError as ve:
-        log_message(f"Error processing SGF file: {file_path}. Error: {str(ve)}", VerbosityLevel.WARNING)
-        return False, 0
     except Exception as e:
-        log_message(f"Unexpected error processing SGF file: {file_path}. Error: {str(e)}", VerbosityLevel.ERROR)
+        log_message(f"Error processing SGF file: {file_path}. Error: {str(e)}", VerbosityLevel.ERROR)
         return False, 0
+
 
 @click.command()
 @click.option('--one', type=click.Path(exists=True), help="Process a single SGF file")
@@ -234,14 +243,15 @@ def manage_problems(one, all, verbosity):
         log_message(f"Processing single file: {one}", VerbosityLevel.INFO)
         result, problem_count = process_sgf(one)
         if result:
-            log_message(f"Successfully processed {one}. Generated {problem_count} problem(s).", VerbosityLevel.WARNING)
+            log_message(f"Successfully processed {one}. Generated {problem_count} problem(s).", VerbosityLevel.INFO)
         else:
-            log_message(f"Failed to process {one}", VerbosityLevel.WARNING)
+            log_message(f"Failed to process {one}", VerbosityLevel.ERROR)
     elif all:
         log_message("Processing all SGF files in the input directory", VerbosityLevel.INFO)
         successful = 0
         failed = 0
         total_problems = 0
+        failed_files = []
         for filename in os.listdir(INPUT_DIR):
             if filename.endswith('.sgf'):
                 file_path = os.path.join(INPUT_DIR, filename)
@@ -251,17 +261,21 @@ def manage_problems(one, all, verbosity):
                     successful += 1
                     total_problems += problem_count
                     log_message(f"Successfully processed {filename}. Generated {problem_count} problem(s).",
-                                VerbosityLevel.WARNING)
+                                VerbosityLevel.INFO)
                 else:
                     failed += 1
-                    log_message(f"Failed to process {filename}", VerbosityLevel.WARNING)
-        log_message(f"\nSummary: Processed {successful + failed} files.", VerbosityLevel.WARNING)
-        log_message(f"Successful: {successful}", VerbosityLevel.WARNING)
-        log_message(f"Failed: {failed}", VerbosityLevel.WARNING)
-        log_message(f"Total problems generated: {total_problems}", VerbosityLevel.WARNING)
+                    failed_files.append(filename)
+                    log_message(f"Failed to process {filename}", VerbosityLevel.ERROR)
+        log_message(f"\nSummary: Processed {successful + failed} files.", VerbosityLevel.INFO)
+        log_message(f"Successful: {successful}", VerbosityLevel.INFO)
+        log_message(f"Failed: {failed}", VerbosityLevel.INFO)
+        log_message(f"Total problems generated: {total_problems}", VerbosityLevel.INFO)
+        if failed_files:
+            log_message("Failed files:", VerbosityLevel.ERROR)
+            for file in failed_files:
+                log_message(file, VerbosityLevel.ERROR)
     else:
         log_message("Please provide either --one <filename> or --all option.", VerbosityLevel.ERROR)
-
 
 if __name__ == "__main__":
     manage_problems()

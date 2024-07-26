@@ -8,6 +8,8 @@ from app.db import db
 from app.user import User
 from config import Config
 from app.routes import bp as main_bp
+from app.problem import Problem
+from flask_migrate import Migrate
 
 login_manager = LoginManager()
 
@@ -45,8 +47,10 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        Problem.load_sgf_files()
 
     return app
+
 
 # User loader function for Flask-Login
 @login_manager.user_loader
