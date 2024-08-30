@@ -1,6 +1,7 @@
 import os
-
+import sys
 from werkzeug.middleware.proxy_fix import ProxyFix  # Just in dev to handle ngrok
+
 from flask import Flask, session
 from flask_login import LoginManager
 from app.logger import logger
@@ -12,6 +13,7 @@ from app.problem import Problem
 from flask_migrate import Migrate
 
 login_manager = LoginManager()
+migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
@@ -34,6 +36,7 @@ def create_app():
     app.static_folder = app.config['STATIC_FOLDER']
 
     db.init_app(app)
+    migrate.init_app(app, db)  # Initialize Flask-Migrate
     login_manager.init_app(app)
 
 
