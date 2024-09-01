@@ -1,57 +1,102 @@
+import os
 import json
 import subprocess
 import logging
-from sgfmill import sgf, sgf_moves
+import time
+from threading import Thread
+from sgfmill import sgf
+from sgfmill.boards import Board
+from typing import Tuple, List, Union, Literal, Any, Dict
 
+Color = Union[Literal["b"], Literal["w"]]
+Move = Union[None, Literal["pass"], Tuple[int, int]]
 
-def run_katago_analysis(moves, board_size, komi, katago_path, analysis_type="scoreLead"):
-    """Runs KataGo analysis for given moves and returns the analysis results."""
-    katago_command = [
-        katago_path,
-        "gtp",
-        "-model",
-        "default_model",
-        "-config",
-        "default_config.cfg"
-    ]
+KATAGO_DIR = r'C:\Users\User\.katrain'
+KATAGO_EXECUTABLE = 'katago-v1.13.0-opencl-windows-x64.exe'
+KATAGO_MODEL = r'kata1-b18c384nbt-s9131461376-d4087399203.bin.gz'
+KATAGO_CONFIG = 'analysis_config.cfg'
 
-    # Initialize KataGo subprocess
-    katago_process = subprocess.Popen(katago_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, text=True)
+# Updated function name to sgfmill_to_xy
+def sgfmill_to_xy(move: Move) -> str:
+    """Convert sgfmill move to explicit integer coordinate string (x, y) for KataGo."""
+    if move is None:
+        return "pass"
+    if move == "pass":
+        return "pass"
+    (y, x) = move
+    return f"({x},{y})"
 
-    results = []
+class KataGo:
+    def __init__(self, katago_path: str, config_path: str, model_path: str, additional_args: List[str] = []):
+        self.query_counter = 0
+        katago = subprocess.Popen(
+            [katago_path, "analysis", "-config", config_path, "-model", model_path, *additional_args],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.katago = katago
 
-    # Prepare query commands for KataGo
-    for turn, move in enumerate(moves):
-        color, coords = move
-        coords_sgf = f"{chr(coords[1] + ord('a'))}{chr(coords[0] + ord('a'))}"
+        def printforever():
+            while katago.poll() is None:
+                data = katago.stderr.readline()
+                time.sleep(0)
+                if data:
+                    print("KataGo: ", data.decode(), end="")
+            data = katago.stderr.read()
+            if data:
+                print("KataGo: ", data.decode(), end="")
 
-        # Build GTP command
-        play_command = f"{color} {coords_sgf}"
-        katago_process.stdin.write(f"play {play_command}\n")
-        katago_process.stdin.flush()
+        self.stderrthread = Thread(target=printforever)
+        self.stderrthread.start()
 
-        # Build analysis command
-        query = {
-            "id": analysis_type,
-            "moves": moves[:turn + 1],
-            "rules": "chinese",
-            "komi": komi,
-            "boardXSize": board_size,
-            "boardYSize": board_size,
-            "analyzeTurns": [turn + 1]
-        }
-        katago_process.stdin.write(json.dumps(query) + "\n")
-        katago_process.stdin.flush()
+    def close(self):
+        self.katago.stdin.close()
 
-        response = katago_process.stdout.readline().strip()
-        result = json.loads(response)
+    def query_raw(self, query: Dict[str, Any]):
+        logging.debug(f"Query before sending to KataGo: {json.dumps(query)}")
 
-        results.append(result)
+        self.katago.stdin.write((json.dumps(query) + "\n").encode())
+        self.katago.stdin.flush()
 
-    katago_process.terminate()
-    return results
+        line = ""
+        while line == "":
+            if self.katago.poll():
+                time.sleep(1)
+                raise Exception("Unexpected katago exit")
+            line = self.katago.stdout.readline()
+            line = line.decode().strip()
 
+        logging.debug(f"Response from KataGo: {line}")
+        response = json.loads(line)
+
+        return response
+
+    def query(self, initial_board: Board, moves: List[Tuple[Color, Move]], komi: float, max_visits=None):
+        query = {}
+        query["id"] = str(self.query_counter)
+        self.query_counter += 1
+
+        # Use explicit integer coordinates for KataGo
+        formatted_moves = [(color.upper(), sgfmill_to_xy(move)) for color, move in moves]
+        query["moves"] = formatted_moves
+        logging.debug(f"Formatted moves for KataGo: {formatted_moves}")
+
+        query["initialStones"] = []
+        for y in range(initial_board.side):
+            for x in range(initial_board.side):
+                color = initial_board.get(y, x)
+                if color:
+                    query["initialStones"].append((color, sgfmill_to_xy((y, x))))
+
+        query["rules"] = "Chinese"
+        query["komi"] = komi
+        query["boardXSize"] = initial_board.side
+        query["boardYSize"] = initial_board.side
+        query["includePolicy"] = True
+        if max_visits is not None:
+            query["maxVisits"] = max_visits
+        return self.query_raw(query)
 
 def parse_sgf_file(file_path):
     """Parses an SGF file and returns the game moves and metadata."""
@@ -61,39 +106,48 @@ def parse_sgf_file(file_path):
     board_size = game.get_size()
     komi = float(game.get_komi())
 
-    moves = sgf_moves.get_main_moves(game)
+    # Get the main sequence of nodes and extract moves
+    main_sequence = game.get_main_sequence()
+    moves = []
+
+    for node in main_sequence:
+        color, move = node.get_move()
+        if move is not None:  # Exclude pass moves
+            moves.append((color, move))
+
     return moves, board_size, komi
 
+def run_katago_analysis(katago, board_size, komi, moves):
+    """Run KataGo analysis on the moves."""
+    # Initialize the board
+    board = Board(board_size)
+    results = []
 
-def compare_with_katrain_results(katago_results, katrain_results):
-    """Compares KataGo analysis results with those obtained from KaTrain."""
-    for i, (katago_result, katrain_result) in enumerate(zip(katago_results, katrain_results)):
-        katago_score = katago_result.get('rootInfo', {}).get('scoreLead')
-        katrain_score = katrain_result.get('scoreLead')
-        katago_pass_value = katago_result.get('rootInfo', {}).get('passValue')
-        katrain_pass_value = katrain_result.get('passValue')
+    # Simulate moves on the board and query KataGo
+    for color, move in moves:
+        if move != "pass":
+            board.play(move[0], move[1], color)
+        katago_result = katago.query(board, [(color, move)], komi)
+        results.append(katago_result)
 
-        logging.debug(f"Move {i + 1}: KataGo score: {katago_score}, KaTrain score: {katrain_score}")
-        logging.debug(f"Move {i + 1}: KataGo pass value: {katago_pass_value}, KaTrain pass value: {katrain_pass_value}")
-
-        if abs(katago_score - katrain_score) > 0.5 or abs(katago_pass_value - katrain_pass_value) > 0.5:
-            logging.warning(f"Significant difference detected at move {i + 1}")
-
+    return results
 
 if __name__ == "__main__":
     # Set up logging
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # Load SGF file and parse moves
-    sgf_file_path = "/mnt/data/251520.sgf"
+    sgf_file_path = "/Users/User/Downloads/251520.sgf"
     moves, board_size, komi = parse_sgf_file(sgf_file_path)
 
-    # Run KataGo analysis
-    katago_path = "/path/to/katago"  # Update with your KataGo executable path
-    katago_results = run_katago_analysis(moves, board_size, komi, katago_path)
+    # Run KataGo analysis with the provided configuration
+    katago_path = os.path.join(KATAGO_DIR, KATAGO_EXECUTABLE)
+    katago_model = os.path.join(KATAGO_DIR, KATAGO_MODEL)
+    katago_config = os.path.join(KATAGO_DIR, KATAGO_CONFIG)
+    katago = KataGo(katago_path, katago_config, katago_model)
 
-    # Load KaTrain results (example)
-    katrain_results = [...]  # Load your KaTrain results here, format as list of dicts
+    katago_results = run_katago_analysis(katago, board_size, komi, moves)
 
-    # Compare results
-    compare_with_katrain_results(katago_results, katrain_results)
+    # (Optional) Load KaTrain results and compare them (not implemented here)
+    # katrain_results = [...]  # Load your KaTrain results here, format as list of dicts
+    katago.close()
