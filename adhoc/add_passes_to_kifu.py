@@ -1,12 +1,19 @@
-from tabnanny import verbose
-
 import click
-import os
-import subprocess
 import json
 import logging
+import os
+import shlex
+import subprocess
+import time
+import traceback
+
+from datetime import datetime
 from sgfmill import sgf
-import sys
+from threading import Thread
+from typing import Tuple, List, Union, Literal
+
+Color = Union[Literal["B"], Literal["W"]]
+Move = Union[None, Literal["pass"], Tuple[int, int]]
 
 KATAGO_DIR = r'C:\Users\User\.katrain'
 KATAGO_EXECUTABLE = 'katago-v1.13.0-opencl-windows-x64.exe'
@@ -14,145 +21,257 @@ KATAGO_MODEL = r'kata1-b18c384nbt-s9131461376-d4087399203.bin.gz'
 KATAGO_CONFIG = 'analysis_config.cfg'
 
 
-def check_katago_tuning():
-    tuning_file = os.path.join(KATAGO_DIR, 'KataGoData', 'opencltuning',
-                               'tune11_gpuNVIDIAGeForceRTX3070LaptopGPU_x19_y19_c384_mv14.txt')
-    return os.path.exists(tuning_file)
+def setup_logger():
+    log_filename = f"katago_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.DEBUG)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(logging.WARNING)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    stream_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(stream_handler)
+    logging.debug("Logger setup complete")
 
 
-def get_tuning_command():
-    return f'{os.path.join(KATAGO_DIR, KATAGO_EXECUTABLE)} benchmark -model {os.path.join(KATAGO_DIR, KATAGO_MODEL)} -config {os.path.join(KATAGO_DIR, KATAGO_CONFIG)} -tune'
+def sgfmill_to_gtp(move: Move, board_size: int) -> str:
+    if move is None or move == "pass":
+        return "pass"
+    y, x = move
+    return "ABCDEFGHJKLMNOPQRSTUVWXYZ"[x] + str(y + 1)
 
 
-class KataGoAnalyzer:
-    def __init__(self):
-        logging.debug("Initializing KataGoAnalyzer")
-        self.process = subprocess.Popen(
-            [os.path.join(KATAGO_DIR, KATAGO_EXECUTABLE), "analysis", "-model", os.path.join(KATAGO_DIR, KATAGO_MODEL),
-             "-config", os.path.join(KATAGO_DIR, KATAGO_CONFIG)],
+class KataGo:
+    def __init__(self, katago_path: str, config_path: str, model_path: str):
+        self.katago_path = katago_path
+        self.config_path = config_path
+        self.model_path = model_path
+        self.query_counter = 0
+        self.katago = None
+        self.stderrthread = None
+
+        # Run tuning if it hasn't been done before
+        self.run_tuning_if_needed()
+
+        # Initialize KataGo
+        self.initialize_katago()
+
+    def run_tuning_if_needed(self):
+        # Check if tuning file exists
+        tuning_file = os.path.join(os.path.dirname(self.katago_path), "KataGoData", "opencltuning", "tune_results.bin")
+
+        if os.path.exists(tuning_file):
+            logging.info("Tuning file already exists. Skipping tuning.")
+            return
+
+        logging.info("Tuning file not found. Running KataGo tuner...")
+
+        tuning_command = [
+            self.katago_path,
+            "tuner",
+            "-config", self.config_path,
+            "-model", self.model_path
+        ]
+
+        # Log the command being run
+        command_str = ' '.join(shlex.quote(str(arg)) for arg in tuning_command)
+        logging.info(f"Executing command: {command_str}")
+
+        result = subprocess.run(tuning_command, capture_output=False)
+
+        if result.returncode != 0:
+            raise Exception(f"KataGo tuning failed: {result.stderr}")
+
+        # Log the output of the tuning process
+        logging.info("Tuning process output:")
+        logging.info(result.stdout)
+        if result.stderr:
+            logging.warning("Tuning process stderr:")
+            logging.warning(result.stderr)
+
+        # Create the tuning file to mark that tuning has been done
+        os.makedirs(os.path.dirname(tuning_file), exist_ok=True)
+        with open(tuning_file, 'w') as f:
+            f.write("Tuning completed")
+
+        logging.info("Tuning completed and marker file created.")
+
+    def initialize_katago(self):
+        katago_command = [
+            self.katago_path,
+            "analysis",
+            "-model", self.model_path,
+            "-config", self.config_path
+        ]
+
+        self.katago = subprocess.Popen(
+            katago_command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1
+            text=True
         )
-        logging.debug("KataGoAnalyzer initialized")
 
-    def analyze(self, query):
-        logging.debug(f"Analyzing query: {query}")
-        self.process.stdin.write(json.dumps(query) + "\n")
-        self.process.stdin.flush()
-        response = self.process.stdout.readline().strip()
-        logging.debug(f"Received response (truncated): {response[:200]}")
-        return response
+        logging.info("KataGo process initialized")
+        self.stderrthread = Thread(target=self.printforever)
+        self.stderrthread.start()
+
+    def printforever(self):
+        while self.katago and self.katago.poll() is None:
+            data = self.katago.stderr.readline()
+            if data:
+                print("KataGo: ", data.strip())
+            time.sleep(0.1)  # Small sleep to prevent busy-waiting
+        if self.katago:
+            data = self.katago.stderr.read()
+            if data:
+                print("KataGo: ", data.strip())
 
     def close(self):
-        logging.debug("Closing KataGoAnalyzer")
-        self.process.stdin.close()
-        self.process.terminate()
-        self.process.wait(timeout=0.2)
-        logging.debug("KataGoAnalyzer closed")
+        if self.katago:
+            self.katago.terminate()
+            try:
+                self.katago.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.katago.kill()
+                self.katago.wait()
+            self.katago.stdin.close()
+            self.katago.stdout.close()
+            self.katago.stderr.close()
+            self.katago = None
+        logging.info("Closed KataGo instance")
 
 
-def setup_logger(verbose=True):
-    """Sets up logging to both console and file."""
-    # Create a logger object
-    logger = logging.getLogger()
-
-    # Set the logging level based on the verbose flag
-    logger.setLevel(logging.DEBUG if verbose else logging.WARNING)
-
-    # Create handlers: one for console (stderr) and one for file
-    console_handler = logging.StreamHandler()
-    file_handler = logging.FileHandler('analysis.log', mode='w')  # Log file will be named 'analysis.log'
-
-    # Set the logging level for handlers
-    console_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
-    file_handler.setLevel(logging.DEBUG if verbose else logging.WARNING)
-
-    # Create a formatter and set it for both handlers
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-
-    # Add both handlers to the logger
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    logging.debug("Logger initialized")
-
-
-def process_sgf(file_path):
-    logging.info(f"Processing SGF file: {file_path}")
+def parse_sgf_file(file_path: str) -> Tuple[List[Tuple[Color, Move]], int, float, str]:
     with open(file_path, 'rb') as f:
-        game = sgf.Sgf_game.from_bytes(f.read())
+        sgf_content = f.read()
+    game = sgf.Sgf_game.from_bytes(sgf_content)
 
-    logging.debug(f"SGF file content: {game.serialise()}")  # Log the SGF content after reading it
-
+    root = game.get_root()
     board_size = game.get_size()
-    komi = game.get_komi() or 7.5
-    logging.debug(f"Board size: {board_size}, Komi: {komi}")
-
-    analyzer = KataGoAnalyzer()
-
+    komi = float(game.get_komi())
     try:
-        moves = []
-        for node in game.get_main_sequence():
-            color, move = node.get_move()
-            move_number = len(moves) + 1
-            logging.debug(f"Processing move {move_number}: {color} {move}")
-            logging.debug(f"Processing node: {node}")
-            logging.debug(f"Extracted move: color={color}, move={move}")
+        rules = root.get("RU")
+    except KeyError:
+        rules = "Tromp-Taylor"
+    if rules.lower() == 'ogs':
+        rules = "Japanese"
 
-            if color is None or move is None:
-                logging.warning(f"Skipping node with no color or move: {node}")
-                continue
+    main_sequence = game.get_main_sequence()
+    moves = []
 
-            moves.append([color.upper(), f"{chr(65 + move[1])}{board_size - move[0]}"])
+    for node in main_sequence:
+        color, move = node.get_move()
+        if move is not None:
+            moves.append((color.upper(), move))
 
-            current_query = {
-                "id": "current",
-                "moves": moves,
-                "rules": "tromp-taylor",
-                "komi": komi,
-                "boardXSize": board_size,
-                "boardYSize": board_size,
-                "analyzeTurns": [len(moves)]
-            }
+    return moves, board_size, komi, rules
 
-            logging.debug(f"Sending query to KataGo: {current_query}")  # Added debug statement
-            current_analysis = analyzer.analyze(current_query)
 
-            pass_query = current_query.copy()
-            pass_query["id"] = "pass"
-            pass_query["initialPlayer"] = "W" if color.upper() == "B" else "B"
+def process_single_move_response(katago_result):
+    move_infos = katago_result.get('moveInfos', [])
 
-            logging.debug(f"Sending pass query to KataGo: {pass_query}")  # Added debug statement
-            pass_analysis = analyzer.analyze(pass_query)
+    if not move_infos:
+        logging.warning(f"No move info found in KataGo response: {katago_result}")
+        return None
 
-            if current_analysis and pass_analysis:
-                logging.debug(f"Raw current_analysis response (truncated): {current_analysis[:100]}")
-                logging.debug(f"Raw pass_analysis response (truncated): {pass_analysis[:100]}")
+    move_data = move_infos[0]  # We're only analyzing one move
+    score_lead = move_data.get('scoreLead', 0)
+    score_stdev = move_data.get('scoreStdev', 0)
 
-                try:
-                    current_data = json.loads(current_analysis)
-                    pass_data = json.loads(pass_analysis)
-                    current_score = current_data['rootInfo']['scoreLead']
-                    pass_score = pass_data['rootInfo']['scoreLead']
-                    comment = (f"Current Score: {'B' if current_score > 0 else 'W'}+{abs(current_score):.1f}\n"
-                               f"Pass Score: {'B' if pass_score > 0 else 'W'}+{abs(pass_score):.1f}")
-                    node.set("C", comment)
-                    logging.debug(f"Added comment to node: {comment}")
-                except (json.JSONDecodeError, KeyError) as e:
-                    logging.error(f"Error processing KataGo analysis: {str(e)}")
-            else:
-                logging.warning(f"No analysis received for move: {move}")
-    finally:
-        analyzer.close()
+    return (score_lead, score_stdev)
 
-    logging.info("SGF processing completed")
-    return game
 
+def analyze_moves(katago, moves, rules, komi, board_size, move_limit=None):
+    results = []
+
+    # Convert moves to GTP format
+    move_list = [[color, sgfmill_to_gtp(move, board_size)] for color, move in moves]
+
+    # Analyze each move, including the initial empty board state
+    for move_number, move in enumerate(move_list[:move_limit]):
+        current_moves = move_list[:move_number]
+        result = analyze_board_state(katago, current_moves, rules, komi, board_size, move_number)
+        results.extend(result)
+
+    return results
+
+
+def analyze_board_state(katago, move_list, rules, komi, board_size, move_number):
+    results = []
+    for perspective in ['play', 'pass']:
+        query_moves = move_list.copy()
+        if perspective == 'pass':
+            current_player = 'W' if len(move_list) % 2 == 1 else 'B'
+            query_moves.append([current_player, 'pass'])
+
+        query = {
+            "id": str(katago.query_counter),
+            "initialStones": [],
+            "moves": query_moves,
+            "rules": rules,
+            "komi": komi,
+            "boardXSize": board_size,
+            "boardYSize": board_size,
+            "includePolicy": False,
+            "analyzeTurns": [len(query_moves)]
+        }
+
+        query_json = json.dumps(query, ensure_ascii=False)
+        logging.debug(f"Query sent to KataGo: {query_json}")
+        katago.katago.stdin.write(query_json + "\n")
+        katago.katago.stdin.flush()
+
+        line = katago.katago.stdout.readline().strip()
+        logging.debug(f"Raw response from KataGo: {line}")
+        katago_result = json.loads(line)
+
+        result = process_single_move_response(katago_result)
+        if result:
+            score, score_stdev = result
+            results.append((move_number, perspective, query_moves, score, score_stdev))
+        else:
+            logging.warning(f"Failed to process move {move_number} from {perspective}'s perspective")
+
+        katago.query_counter += 1
+
+    return results
+
+
+def generate_sgf_output(output_file, moves, board_size, komi, rules, results):
+    game = sgf.Sgf_game(size=board_size)
+    root = game.get_root()
+
+    # Set game info
+    root.set("KM", komi)
+    root.set("RU", rules)
+
+    # Create the main line with moves and analysis
+    node = root
+    for move_number, (color, move) in enumerate(moves):
+        node = node.add_child()
+        node.set_move(color, move)
+
+        # Find analysis results for this move
+        play_result = next((r for r in results if r[0] == move_number and r[1] == 'play'), None)
+        pass_result = next((r for r in results if r[0] == move_number and r[1] == 'pass'), None)
+
+        if play_result and pass_result:
+            comment = f"Move {move_number} analysis:\n"
+            comment += f"Play: {play_result[3]:.1f} ±{play_result[4]:.1f}\n"
+            comment += f"Pass: {pass_result[3]:.1f} ±{pass_result[4]:.1f}"
+            node.set("C", comment)
+
+    # Write the SGF to the output file
+    with open(output_file, "wb") as f:
+        f.write(game.serialise())
+
+    logging.info(f"Analysis results written to SGF file: {output_file}")
 
 @click.command()
 @click.argument('input_file', type=click.Path(exists=True))
@@ -160,24 +279,31 @@ def process_sgf(file_path):
 @click.option('--verbose/--no-verbose', default=True, show_default=True, help="Increase output verbosity")
 def add_passes_to_kifu(input_file, output_file, verbose):
     """Add KataGo analysis to a kifu file."""
-    setup_logger(verbose)
-
-    if not check_katago_tuning():
-        click.echo("It appears this is the first time running KataGo on this system.")
-        click.echo("KataGo needs to be tuned for your GPU before it can be used.")
-        click.echo("Please run the following command in your terminal:")
-        click.echo("\n" + get_tuning_command() + "\n")
-        click.echo("This process may take several minutes. Once completed, run this script again.")
-        return
+    setup_logger()
 
     logging.info(f"Processing {input_file}...")
 
-    processed_game = process_sgf(input_file)
-    with open(output_file, 'wb') as f:
-        f.write(processed_game.serialise())
+    try:
+        moves, board_size, komi, rules = parse_sgf_file(input_file)
 
-    logging.info(f"Processed SGF written to {output_file}")
+        # Initialize KataGo instance
+        katago_path = os.path.join(KATAGO_DIR, KATAGO_EXECUTABLE)
+        katago_model = os.path.join(KATAGO_DIR, KATAGO_MODEL)
+        katago_config = os.path.join(KATAGO_DIR, KATAGO_CONFIG)
+        katago = KataGo(katago_path, katago_config, katago_model)
 
+        results = analyze_moves(katago, moves, rules, komi, board_size)
+
+        # Write results directly to the output file (SGF)
+        generate_sgf_output(output_file, moves, board_size, komi, rules, results)
+
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        logging.error(traceback.format_exc())
+    finally:
+        if 'katago' in locals():
+            katago.close()
+            logging.info("Closed KataGo instance")
 
 if __name__ == "__main__":
     add_passes_to_kifu()

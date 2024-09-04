@@ -244,6 +244,8 @@ def process_katago_response(raw_katago_results, moves, board_size):
                 score_accuracy = score_stdev if score_stdev is not None else float('nan')
                 result = (move_number, formatted_move, score, score_accuracy)
                 results.append(result)
+#                if visits >= min_visits and score_stdev <= max_score_stdev and utility_gap <= max_utility_gap:
+#                    confident_moves.append(result)
                 logging.debug(f"Appended result: {result}")
             else:
                 logging.warning(f"Move data missing 'move' key: {move_data}")
