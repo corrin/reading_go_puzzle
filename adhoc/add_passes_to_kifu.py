@@ -10,6 +10,7 @@ import traceback
 from datetime import datetime
 from sgfmill import sgf
 from threading import Thread
+from tqdm import tqdm
 from typing import Tuple, List, Union, Literal
 
 Color = Union[Literal["B"], Literal["W"]]
@@ -175,16 +176,18 @@ def parse_sgf_file(file_path: str) -> Tuple[List[Tuple[Color, Move]], int, float
 
 def process_single_move_response(katago_result):
     move_infos = katago_result.get('moveInfos', [])
-
     if not move_infos:
-        logging.warning(f"No move info found in KataGo response: {katago_result}")
         return None
-
-    move_data = move_infos[0]  # We're only analyzing one move
-    score_lead = move_data.get('scoreLead', 0)
-    score_stdev = move_data.get('scoreStdev', 0)
-
-    return (score_lead, score_stdev)
+    move_data = move_infos[0]
+    return {
+        'scoreLead': move_data.get('scoreLead', 0),
+        'scoreStdev': move_data.get('scoreStdev', 0),
+        'lcb': move_data.get('lcb', 0),
+        'utility': move_data.get('utility', 0),
+        'utilityLcb': move_data.get('utilityLcb', 0),
+        'visits': move_data.get('visits', 0),
+        'winrate': move_data.get('winrate', 0)
+    }
 
 
 def analyze_moves(katago, moves, rules, komi, board_size, move_limit=None):
@@ -192,12 +195,15 @@ def analyze_moves(katago, moves, rules, komi, board_size, move_limit=None):
 
     # Convert moves to GTP format
     move_list = [[color, sgfmill_to_gtp(move, board_size)] for color, move in moves]
+    total_moves = len(move_list) if move_limit is None else min(len(move_list), move_limit)
 
     # Analyze each move, including the initial empty board state
-    for move_number, move in enumerate(move_list[:move_limit]):
-        current_moves = move_list[:move_number]
-        result = analyze_board_state(katago, current_moves, rules, komi, board_size, move_number)
-        results.extend(result)
+    with tqdm(total=total_moves, desc="Analyzing moves") as pbar:
+        for move_number, move in enumerate(move_list[:total_moves]):
+            current_moves = move_list[:move_number]
+            result = analyze_board_state(katago, current_moves, rules, komi, board_size, move_number)
+            results.extend(result)
+            pbar.update(1)
 
     return results
 
@@ -222,21 +228,21 @@ def analyze_board_state(katago, move_list, rules, komi, board_size, move_number)
             "analyzeTurns": [len(query_moves)]
         }
 
-        query_json = json.dumps(query, ensure_ascii=False)
-        logging.debug(f"Query sent to KataGo: {query_json}")
+        query_json = json.dumps(query)
+        logging.debug(f"Sending query to KataGo: {query_json}")
         katago.katago.stdin.write(query_json + "\n")
         katago.katago.stdin.flush()
 
         line = katago.katago.stdout.readline().strip()
         logging.debug(f"Raw response from KataGo: {line}")
-        katago_result = json.loads(line)
 
-        result = process_single_move_response(katago_result)
-        if result:
-            score, score_stdev = result
-            results.append((move_number, perspective, query_moves, score, score_stdev))
-        else:
-            logging.warning(f"Failed to process move {move_number} from {perspective}'s perspective")
+        try:
+            katago_result = json.loads(line)
+            results.append((move_number, perspective, query_moves, katago_result))
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse KataGo response: {e}")
+            logging.error(f"Raw response: {line}")
+            raise Exception(f"KataGo returned invalid JSON: {line}")
 
         katago.query_counter += 1
 
@@ -251,10 +257,16 @@ def generate_sgf_output(output_file, moves, board_size, komi, rules, results):
     root.set("KM", komi)
     root.set("RU", rules)
 
+    # if results:
+    #     pass_move = results.pop(0)
+
+    # We silently discard the first position.  No point analyzing an empty board
+
     # Create the main line with moves and analysis
-    node = root
     for move_number, (color, move) in enumerate(moves):
-        node = node.add_child()
+        color = color.lower()
+        logging.debug(f"Processing move {move_number}: color={color}, move={move}")
+        node = game.extend_main_sequence()
         node.set_move(color, move)
 
         # Find analysis results for this move
@@ -262,10 +274,19 @@ def generate_sgf_output(output_file, moves, board_size, komi, rules, results):
         pass_result = next((r for r in results if r[0] == move_number and r[1] == 'pass'), None)
 
         if play_result and pass_result:
-            comment = f"Move {move_number} analysis:\n"
-            comment += f"Play: {play_result[3]:.1f} ±{play_result[4]:.1f}\n"
-            comment += f"Pass: {pass_result[3]:.1f} ±{pass_result[4]:.1f}"
-            node.set("C", comment)
+            play_data = process_single_move_response(play_result[3])
+            pass_data = process_single_move_response(pass_result[3])
+
+            if play_data and pass_data:
+                move_str = sgfmill_to_gtp(move, board_size) if move else "pass"
+                comment = f"Move {move_number + 1} ({move_str}) analysis:\n"
+                comment += f"Play: Score: {play_data['scoreLead']:.4f} ±{play_data['scoreStdev']:.4f}\n"
+                comment += f"      LCB: {play_data['lcb']:.4f}, Utility: {play_data['utility']:.4f}, UtilityLCB: {play_data['utilityLcb']:.4f}\n"
+                comment += f"      Visits: {play_data['visits']}, Winrate: {play_data['winrate']:.4f}\n"
+                comment += f"Pass: Score: {pass_data['scoreLead']:.4f} ±{pass_data['scoreStdev']:.4f}\n"
+                comment += f"      LCB: {pass_data['lcb']:.4f}, Utility: {pass_data['utility']:.4f}, UtilityLCB: {pass_data['utilityLcb']:.4f}\n"
+                comment += f"      Visits: {pass_data['visits']}, Winrate: {pass_data['winrate']:.4f}\n"
+                node.set("C", comment)
 
     # Write the SGF to the output file
     with open(output_file, "wb") as f:
